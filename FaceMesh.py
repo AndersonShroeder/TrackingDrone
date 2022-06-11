@@ -1,0 +1,2 @@
+import FaceDetection
+FaceDetection.main()
