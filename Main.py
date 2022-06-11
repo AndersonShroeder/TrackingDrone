@@ -1,6 +1,7 @@
 
 from FaceDetection import Detector
 from djitellopy import Tello
+from math import sqrt
 import time
 import cv2
 import pygame
@@ -8,7 +9,7 @@ import numpy as np
 
 
 #drone speed
-S = 60
+
 
 FPS = 120
 
@@ -23,13 +24,37 @@ class Flightcontrol():
         self.ud_velocity = 0 #Up(+) -Down(-)
         self.lr_velocity = 0 #Left(+) - Right(-)
         self.yaw_velocity = 0
+        self.S = 60 #Drone default adjust speed
         self.speed = 10
         self.tello.set_speed(self.speed)
 
         self.send_rc_control = False
-        
+    
+    def change_speed(self, target_pixel, current_pixel):
+        self.S = int(60-(60/(2**((target_pixel/current_pixel) - 1))))
+        return self.S
 
-    def autonomous_flight(self, screen_dimensions, bboxs):
+    def check_yaw(self, cX, sX, error):
+        if (cX + error) < sX or (cX + error) > sX:
+            self.yaw_velocity = self.change_speed(cX, sX)
+
+    
+    def check_ud(self, cY, sY, error):
+        if (cY + error) < sY or (cY + error) > sY:
+            self.ud_velocity = self.change_speed(cY, sY)
+
+    def check_fb(self, w, h, screen_dimensions, ratio):
+        sX, sY = screen_dimensions
+        box_area = w * h
+        screen_area = sX * sY
+        acceptable_area = (sX * ratio) * (sY * ratio)
+        if (box_area) < acceptable_area or (box_area) > acceptable_area:
+            self.fb_velocity = -self.change_speed(sqrt(box_area), sqrt(acceptable_area))
+
+
+        
+    def autonomous_flight(self, screen_dimensions, bboxs, error = 10):
+
         #bbox present
         if bboxs:
             bbox = bboxs[0][1][0]
@@ -37,8 +62,25 @@ class Flightcontrol():
             x1, y1 = x + w, y + h
             cX, cY = int((x + x1)/2), int((y +y1)/2)
             sX, sY = screen_dimensions
-            sX, sY = sX//2, sY//2
-        
+            sY = sY//4
+            sX = sX//2
+            print(sY, cY)
+
+            #check yaw
+            self.check_yaw(cX, sX, 5)
+            
+            #check up/down - swapped target/current
+            self.check_ud(sY, cY, 5)
+
+            self.check_fb(w, h, screen_dimensions, 1/3)
+
+            #send adjustments to drone
+            self.update()
+
+            #reset velocities
+            self.ud_velocity, self.lr_velocity, self.yaw_velocity, self.fb_velocity = 0, 0 ,0 ,0
+            self.update()
+
         else:
             pass
 
@@ -61,25 +103,25 @@ class Flightcontrol():
             elif event.type == pygame.KEYUP:
                 self.key_up(event.key)
                 self.update()
-    
+
     def key_down(self, key):
         if not self.auto:
             if key == pygame.K_UP:  # set forward velocity
-                self.fb_velocity = S
+                self.fb_velocity = self.S
             elif key == pygame.K_DOWN:  # set backward velocity
-                self.fb_velocity = -S
+                self.fb_velocity = -self.S
             elif key == pygame.K_LEFT:  # set left velocity
-                self.lr_velocity = -S
+                self.lr_velocity = -self.S
             elif key == pygame.K_RIGHT:  # set right velocity
-                self.lr_velocity = S
+                self.lr_velocity = self.S
             elif key == pygame.K_w:  # set up velocity
-                self.ud_velocity = S
+                self.ud_velocity = self.S
             elif key == pygame.K_s:  # set down velocity
-                self.ud_velocity = -S
+                self.ud_velocity = -self.S
             elif key == pygame.K_q:  # set yaw counter clockwise velocity
-                self.yaw_velocity = -S
+                self.yaw_velocity = -self.S
             elif key == pygame.K_e:  # set yaw clockwise velocity
-                self.yaw_velocity = S
+                self.yaw_velocity = self.S
             elif key == pygame.K_a:
                 self.auto = True
         else:
@@ -119,6 +161,7 @@ class Flightcontrol():
 class Mediacontrol(Flightcontrol):
     def __init__(self, tello):
         self.tello = tello
+        self.tello.streamoff()
         self.tello.streamon()
         self.pTime = 0
         self.bboxs = []
