@@ -84,7 +84,7 @@ class Flightcontrol():
         else:
             pass
 
-
+ 
         self.check_inputs()
 
     def manual_flight(self):
