@@ -1,5 +1,6 @@
 
 from FaceDetection import Detector
+from HandTracking import HandTracking
 from djitellopy import Tello
 from math import sqrt
 import time
@@ -27,6 +28,7 @@ class Flightcontrol():
         self.S = 60 #Drone default adjust speed
         self.speed = 10
         self.tello.set_speed(self.speed)
+        self.hand_signals = []
 
         self.send_rc_control = False
     
@@ -72,7 +74,7 @@ class Flightcontrol():
             #check up/down - swapped target/current
             self.check_ud(sY, cY, 5)
 
-            self.check_fb(w, h, screen_dimensions, 1/3)
+            self.check_fb(w, h, screen_dimensions, 1/2)
 
             #send adjustments to drone
             self.update()
@@ -87,10 +89,22 @@ class Flightcontrol():
  
         self.check_inputs()
 
+
     def manual_flight(self):
         self.check_inputs()
         
+    def check_hands(self):
+        if self.hand_signals:
+            if self.hand_signals== [0, 1, 0, 0, 0]:
+                self.auto = True
+            if self.hand_signals == [0, 1, 1, 0, 0]:
+                self.auto = False
+        else:
+            pass
+
     def check_inputs(self):
+        self.check_hands()
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.run = False
@@ -157,6 +171,28 @@ class Flightcontrol():
             self.tello.send_rc_control(self.lr_velocity, self.fb_velocity,
                 self.ud_velocity, self.yaw_velocity)
     
+class DetectorMerge:
+    def __init__(self, face_detector = False, hand_tracker = False):
+        self.fd = face_detector
+        self.ht = hand_tracker
+        self.hand_tracker = None
+        self.face_detector = None
+
+        if face_detector:
+            self.create_FD()
+            self.fd = True
+        if hand_tracker:
+            self.create_HT()
+            self.ht = True
+
+    def create_HT(self):
+        self.hand_tracker = HandTracking()
+
+    def create_FD(self):
+        self.face_detector = Detector(.75)
+
+    
+
 
 class Mediacontrol(Flightcontrol):
     def __init__(self, tello):
@@ -165,6 +201,8 @@ class Mediacontrol(Flightcontrol):
         self.tello.streamon()
         self.pTime = 0
         self.bboxs = []
+        self.hands = []
+        self.landmark_locations = []
 
         #screen dimensions
         img = self.tello.get_frame_read().frame
@@ -175,8 +213,11 @@ class Mediacontrol(Flightcontrol):
 
     def start(self, detector):
         img = self.tello.get_frame_read().frame
-        img, self.bboxs = detector.detect(img)
-
+        if detector.fd:
+            img, self.bboxs = detector.face_detector.detect(img)
+        if detector.ht:
+            img, self.hands = detector.hand_tracker.hand_position(img)
+  
         #Display Fps
         cTime = time.time()
         fps = 1/(cTime - self.pTime)
@@ -193,7 +234,7 @@ class Mediacontrol(Flightcontrol):
         self.convert2Pygame(img)
 
         #cv2.imshow("Image", img)
-        cv2.waitKey(10)
+        cv2.waitKey(1)
 
 
     def convert2Pygame(self, img):
@@ -213,12 +254,13 @@ class Mediacontrol(Flightcontrol):
 
 
 def main():
-    detector = Detector(.75)
+    detector = DetectorMerge(True, True)
     drone = Flightcontrol()
     stream = Mediacontrol(drone.tello)
 
     while drone.run:
         stream.start(detector)
+        drone.hand_signals = stream.hands
         if not drone.auto:
             drone.manual_flight()
         else:
