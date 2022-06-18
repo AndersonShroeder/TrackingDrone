@@ -53,8 +53,8 @@ class Flightcontrol():
         self.ud_velocity = 0 #Up(+) -Down(-)
         self.lr_velocity = 0 #Left(+) - Right(-)
         self.yaw_velocity = 0
-        self.S = 60 #Drone default adjust speed
-        self.speed = 10
+        self.S = 80 #Drone default adjust speed
+        self.speed = 30
         self.tello.set_speed(self.speed)
         self.hand_signals = []
 
@@ -63,7 +63,7 @@ class Flightcontrol():
 
 
     def change_speed(self, target_pixel, current_pixel):
-        self.S = int(60-(60/(2**((target_pixel/current_pixel) - 1))))
+        self.S = int(self.S-(self.S/(2**((target_pixel/current_pixel) - 1))))
         return self.S
 
 
@@ -86,25 +86,28 @@ class Flightcontrol():
             self.fb_velocity = -self.change_speed(sqrt(box_area), sqrt(acceptable_area))
 
 
-    def auto_flight(self,screen_dimensions):
+    def auto_flight(self, screen_dimensions):
         if self.detector.fd:
-            self.face_track(screen_dimensions)
+            self.drone_track(self.detector.facebboxs, screen_dimensions, 1/2)
         if self.detector.od:
-            pass
+            self.drone_track(self.detector.objbboxs, screen_dimensions, 7/8)
         
         
-    def face_track(self, screen_dimensions, error = 10):
+    def drone_track(self, bboxs, screen_dimensions, ratio, error = 10):
 
         #bbox present
-        if self.detector.bboxs:
-            bbox = self.detector.bboxs[0][1][0]
+        if bboxs:
+            if bboxs == self.detector.facebboxs:
+                bbox = bboxs[0][1][0]
+            if bboxs == self.detector.objbboxs:
+                bbox = bboxs[0]
+
             x, y, w, h = bbox
             x1, y1 = x + w, y + h
             cX, cY = int((x + x1)/2), int((y +y1)/2)
             sX, sY = screen_dimensions
             sY = sY//4
             sX = sX//2
-            print(sY, cY)
 
             #check yaw
             self.check_yaw(cX, sX, 5)
@@ -112,7 +115,7 @@ class Flightcontrol():
             #check up/down - swapped target/current
             self.check_ud(sY, cY, 5)
 
-            self.check_fb(w, h, screen_dimensions, 1/2)
+            self.check_fb(w, h, screen_dimensions, ratio)
 
             #send adjustments to drone
             self.update()

@@ -60,6 +60,7 @@ class Objdetector(Detector):
         classLabelIDs, confidences, bboxs = self.net.detect(img, confThreshold=thres)
     
         bboxs = list(bboxs)
+        real_bboxs = []
         confidences = list(np.array(confidences).reshape(1,-1)[0])
         confidences = list(map(float, confidences))
 
@@ -67,21 +68,23 @@ class Objdetector(Detector):
 
         #loop through all non overlapping boxes
         if len(bboxIdx) != 0:
+            
             for i in range(0, len(bboxIdx)):
 
                 bbox = bboxs[np.squeeze(bboxIdx[i])]
                 classConfidence = confidences[np.squeeze(bboxIdx[i])]
                 classLabelID = np.squeeze(classLabelIDs[np.squeeze(bboxIdx[i])])
                 classLabel = self.classesList[classLabelID]
+                if classLabel.upper() == 'PERSON':
+                    real_bboxs.append(bbox)
+                    displayText = "{}:{:.4f}".format(classLabel, classConfidence)
 
-                displayText = "{}:{:.4f}".format(classLabel, classConfidence)
+                    x, y, w, h = bbox
 
-                x, y, w, h = bbox
-
-                cv2.putText(img, displayText, (x, y-10), cv2.FONT_HERSHEY_PLAIN, 1 , (0, 255, 0), 1)
-                self.draw(img, bbox)
-            
-        return img, bboxs
+                    cv2.putText(img, displayText, (x, y-10), cv2.FONT_HERSHEY_PLAIN, 1 , (0, 255, 0), 1)
+                    self.draw(img, bbox)
+                
+        return img, real_bboxs
 
 class Handtracking(Detector):
     def __init__(self):
