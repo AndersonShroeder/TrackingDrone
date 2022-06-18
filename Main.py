@@ -1,6 +1,5 @@
-
-from FaceDetection import Detector
-from HandTracking import HandTracking
+import Detections
+import mediapipe as mp
 from djitellopy import Tello
 from math import sqrt
 import time
@@ -13,12 +12,41 @@ import numpy as np
 
 
 FPS = 120
+    
+class Vision:
+    def __init__(self, face_detector = False, hand_tracker = False, object_detector = False):
+        #store relevant information
+        self.facebboxs = []
+        self.objbboxs = []
+        self.hands = []
+
+        #Bools to check whether the function is needed
+        self.fd = face_detector
+        self.ht = hand_tracker
+        self.od = object_detector
+
+        #create Objects
+        self.hand_tracker = Detections.Handtracking()
+        self.face_detector = Detections.Facedetector(.75)
+        self.object_detector = Detections.Objdetector()
+
+    def run(self, img):
+        if self.fd:
+            img, self.facebboxs = self.face_detector.run(img)
+        if self.ht:
+            img, self.hands = self.hand_tracker.run(img)
+        if self.od:
+            img, self.objbboxs = self.object_detector.run(img)
+  
 
 class Flightcontrol():
-    def __init__(self):
+    def __init__(self, face_detector = False, hand_tracker = False, object_detector = False):
+        self.detector = Vision(face_detector, hand_tracker, object_detector) #detector is initialized under drone - allows functions to be performed
+
         self.tello = Tello()
         self.tello.connect()
         self.run = True
+
         self.auto = False #intializes drone as manual flight
 
         self.fb_velocity = 0 #Forward(+) -back(-)
@@ -32,9 +60,12 @@ class Flightcontrol():
 
         self.send_rc_control = False
     
+
+
     def change_speed(self, target_pixel, current_pixel):
         self.S = int(60-(60/(2**((target_pixel/current_pixel) - 1))))
         return self.S
+
 
     def check_yaw(self, cX, sX, error):
         if (cX + error) < sX or (cX + error) > sX:
@@ -45,6 +76,7 @@ class Flightcontrol():
         if (cY + error) < sY or (cY + error) > sY:
             self.ud_velocity = self.change_speed(cY, sY)
 
+
     def check_fb(self, w, h, screen_dimensions, ratio):
         sX, sY = screen_dimensions
         box_area = w * h
@@ -54,12 +86,18 @@ class Flightcontrol():
             self.fb_velocity = -self.change_speed(sqrt(box_area), sqrt(acceptable_area))
 
 
+    def auto_flight(self,screen_dimensions):
+        if self.detector.fd:
+            self.face_track(screen_dimensions)
+        if self.detector.od:
+            pass
         
-    def autonomous_flight(self, screen_dimensions, bboxs, error = 10):
+        
+    def face_track(self, screen_dimensions, error = 10):
 
         #bbox present
-        if bboxs:
-            bbox = bboxs[0][1][0]
+        if self.detector.bboxs:
+            bbox = self.detector.bboxs[0][1][0]
             x, y, w, h = bbox
             x1, y1 = x + w, y + h
             cX, cY = int((x + x1)/2), int((y +y1)/2)
@@ -94,6 +132,7 @@ class Flightcontrol():
         self.check_inputs()
         
     def check_hands(self):
+        self.hand_signals = self.detector.hands
         if self.hand_signals:
             if self.hand_signals== [0, 1, 0, 0, 0]:
                 self.auto = True
@@ -103,8 +142,8 @@ class Flightcontrol():
             pass
 
     def check_inputs(self):
-        self.check_hands()
-
+        if self.detector.ht:
+            self.check_hands()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.run = False
@@ -170,28 +209,6 @@ class Flightcontrol():
         if self.send_rc_control:
             self.tello.send_rc_control(self.lr_velocity, self.fb_velocity,
                 self.ud_velocity, self.yaw_velocity)
-    
-class DetectorMerge:
-    def __init__(self, face_detector = False, hand_tracker = False):
-        self.fd = face_detector
-        self.ht = hand_tracker
-        self.hand_tracker = None
-        self.face_detector = None
-
-        if face_detector:
-            self.create_FD()
-            self.fd = True
-        if hand_tracker:
-            self.create_HT()
-            self.ht = True
-
-    def create_HT(self):
-        self.hand_tracker = HandTracking()
-
-    def create_FD(self):
-        self.face_detector = Detector(.75)
-
-    
 
 
 class Mediacontrol(Flightcontrol):
@@ -200,9 +217,6 @@ class Mediacontrol(Flightcontrol):
         self.tello.streamoff()
         self.tello.streamon()
         self.pTime = 0
-        self.bboxs = []
-        self.hands = []
-        self.landmark_locations = []
 
         #screen dimensions
         img = self.tello.get_frame_read().frame
@@ -211,30 +225,39 @@ class Mediacontrol(Flightcontrol):
         pygame.display.set_caption("Stream")
 
 
-    def start(self, detector):
+    def videoOn(self, vision: Vision):
         img = self.tello.get_frame_read().frame
-        if detector.fd:
-            img, self.bboxs = detector.face_detector.detect(img)
-        if detector.ht:
-            img, self.hands = detector.hand_tracker.hand_position(img)
-  
+
+        #activate detectors
+        vision.run(img)
+
         #Display Fps
+        self.fps(img)
+
+        #Draw Center Circle
+        self.alignment_circle(img)
+
+        #convert cv2 frame to pygame window
+        self.convert2Pygame(img)
+
+        cv2.waitKey(1)
+
+
+    def fps(self, img):
+        
         cTime = time.time()
         fps = 1/(cTime - self.pTime)
         self.pTime = cTime
         cv2.putText(img, f"FPS: {int(fps)}", (20, 70), cv2.FONT_HERSHEY_PLAIN, 3, (0, 255, 0), 2)
 
-        #Draw Center Circle
+
+    def alignment_circle(self, img):
         h, w, c= img.shape
         cY = h//2
         cX = w//2
         cv2.circle(img, (cX, cY), 4, (0,255,0), 2)
         
-        #convert cv2 frame to pygame window
-        self.convert2Pygame(img)
 
-        #cv2.imshow("Image", img)
-        cv2.waitKey(1)
 
 
     def convert2Pygame(self, img):
@@ -249,22 +272,19 @@ class Mediacontrol(Flightcontrol):
 
 
 
-    
-
 
 
 def main():
-    detector = DetectorMerge(True, True)
-    drone = Flightcontrol()
+    drone = Flightcontrol(False, False, True)
     stream = Mediacontrol(drone.tello)
 
     while drone.run:
-        stream.start(detector)
-        drone.hand_signals = stream.hands
+        stream.videoOn(drone.detector)
+
         if not drone.auto:
             drone.manual_flight()
         else:
-            drone.autonomous_flight([stream.screen_height, stream.screen_width], stream.bboxs)
+            drone.auto_flight([stream.screen_height, stream.screen_width])
     
     drone.tello.land()
 
