@@ -42,11 +42,9 @@ class Vision:
 class Flightcontrol():
     def __init__(self, face_detector = False, hand_tracker = False, object_detector = False):
         self.detector = Vision(face_detector, hand_tracker, object_detector) #detector is initialized under drone - allows functions to be performed
-
         self.tello = Tello()
         self.tello.connect()
         self.run = True
-
         self.auto = False #intializes drone as manual flight
 
         self.fb_velocity = 0 #Forward(+) -back(-)
@@ -56,11 +54,11 @@ class Flightcontrol():
         self.S = 80 #Drone default adjust speed
         self.speed = 30
         self.tello.set_speed(self.speed)
+
         self.hand_signals = []
 
         self.send_rc_control = False
     
-
 
     def change_speed(self, target_pixel, current_pixel):
         self.S = int(self.S-(self.S/(2**((target_pixel/current_pixel) - 1))))
@@ -71,7 +69,7 @@ class Flightcontrol():
         if (cX + error) < sX or (cX + error) > sX:
             self.yaw_velocity = self.change_speed(cX, sX)
 
-    
+
     def check_ud(self, cY, sY, error):
         if (cY + error) < sY or (cY + error) > sY:
             self.ud_velocity = self.change_speed(cY, sY)
@@ -127,13 +125,13 @@ class Flightcontrol():
         else:
             pass
 
- 
         self.check_inputs()
 
 
     def manual_flight(self):
         self.check_inputs()
         
+
     def check_hands(self):
         self.hand_signals = self.detector.hands
         if self.hand_signals:
@@ -143,6 +141,7 @@ class Flightcontrol():
                 self.auto = False
         else:
             pass
+
 
     def check_inputs(self):
         if self.detector.ht:
@@ -159,6 +158,7 @@ class Flightcontrol():
             elif event.type == pygame.KEYUP:
                 self.key_up(event.key)
                 self.update()
+
 
     def key_down(self, key):
         if not self.auto:
@@ -184,6 +184,7 @@ class Flightcontrol():
             if key == pygame.K_m:
                 self.auto = False
 
+
     def key_up(self, key):
         if not self.auto:
             if key == pygame.K_UP or key == pygame.K_DOWN:  # set zero forward/backward velocity
@@ -207,6 +208,7 @@ class Flightcontrol():
             elif key == pygame.K_l:  # land
                 not self.tello.land()
                 self.send_rc_control = False
+
 
     def update(self):
         if self.send_rc_control:
@@ -261,8 +263,6 @@ class Mediacontrol(Flightcontrol):
         cv2.circle(img, (cX, cY), 4, (0,255,0), 2)
         
 
-
-
     def convert2Pygame(self, img):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = np.rot90(img)
@@ -271,9 +271,6 @@ class Mediacontrol(Flightcontrol):
         self.screen.blit(img, (0,0))
         pygame.display.update()
         time.sleep(1 / FPS)
-
-
-
 
 
 
